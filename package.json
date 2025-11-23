@@ -1,0 +1,36 @@
+{
+  "name": "shadow-db-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server for semantic search in PostgreSQL shadow databases with 768D embeddings",
+  "main": "shadow-db-mcp-server.ts",
+  "type": "module",
+  "scripts": {
+    "start": "npx tsx shadow-db-mcp-server.ts",
+    "dev": "npx tsx --watch shadow-db-mcp-server.ts",
+    "test": "npx tsx test-shadow-mcp.ts"
+  },
+  "keywords": [
+    "mcp",
+    "semantic-search",
+    "embeddings",
+    "postgresql",
+    "vector-database"
+  ],
+  "author": "Psyopsys.AI",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@xenova/transformers": "^2.6.0",
+    "fastify": "^4.25.0",
+    "pg": "^8.10.0",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.7.0",
+    "@types/node": "^20.0.0",
+    "@types/pg": "^8.10.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

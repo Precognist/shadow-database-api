@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  shadow-db-http:
+    build: .
+    container_name: shadow-db-http
+    restart: unless-stopped
+
+    environment:
+      PG_HOST: ${PG_HOST:-postgres}
+      PG_PORT: ${PG_PORT:-5432}
+      PG_USER: ${PG_USER:-nexus}
+      PG_PASSWORD: ${PG_PASSWORD}
+      NODE_ENV: production
+      PORT: 8000
+      LOG_LEVEL: info
+
+    ports:
+      - "8000:8000"
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
