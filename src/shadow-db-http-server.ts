@@ -28,21 +28,23 @@ interface AgentAccessConfig {
 }
 
 const SHADOW_DB_CONFIG: ShadowDbConfig = {
-  real_estate: {
-    database: 'nexus_real_estate_portfolio_demo_shadow',
-    tables: ['Properties', 'MaintenanceRequests', 'Tenants']
-  },
-  dovetail: {
-    database: 'nexus_dovetail_gig_platform_demo_shadow',
-    tables: ['Bands', 'Venues', 'Matches']
-  }
+  // COMMENTED OUT: Production database hardcoded references - security issue
+  // real_estate: {
+  //   database: 'nexus_real_estate_portfolio_demo_shadow',
+  //   tables: ['Properties', 'MaintenanceRequests', 'Tenants']
+  // },
+  // dovetail: {
+  //   database: 'nexus_dovetail_gig_platform_demo_shadow',
+  //   tables: ['Bands', 'Venues', 'Matches']
+  // }
 };
 
 const AGENT_DATABASE_MAPPING: AgentAccessConfig = {
-  'real-estate-intelligence-specialist': 'real_estate',
-  'pl94ap0ghrqwbdx': 'real_estate',
-  'Precursor Test-Agent for Dovetail.AI': 'dovetail',
-  'p802fqqug779z13': 'dovetail'
+  // COMMENTED OUT: Production agent mappings - security issue
+  // 'real-estate-intelligence-specialist': 'real_estate',
+  // 'pl94ap0ghrqwbdx': 'real_estate',
+  // 'Precursor Test-Agent for Dovetail.AI': 'dovetail',
+  // 'p802fqqug779z13': 'dovetail'
 };
 
 const PG_CONFIG = {
@@ -206,7 +208,7 @@ fastify.get('/openapi.json', async (request, reply) => {
                   properties: {
                     database: {
                       type: 'string',
-                      enum: ['real_estate', 'dovetail'],
+                      // enum: ['real_estate', 'dovetail'], // COMMENTED OUT: Production hardcoded values
                       description: 'Shadow database to search'
                     },
                     table: {
@@ -268,7 +270,7 @@ fastify.get('/openapi.json', async (request, reply) => {
                   properties: {
                     database: {
                       type: 'string',
-                      enum: ['real_estate', 'dovetail'],
+                      // enum: ['real_estate', 'dovetail'], // COMMENTED OUT: Production hardcoded values
                       description: 'Shadow database to query'
                     }
                   },
@@ -508,7 +510,7 @@ async function start() {
 
     console.error('✅ Shadow Database HTTP Server running');
     console.error(`   Listening on http://0.0.0.0:${port}`);
-    console.error('   Available databases: real_estate, dovetail');
+    // console.error('   Available databases: real_estate, dovetail'); // COMMENTED OUT: Production hardcoded values
     console.error('   Access control: ENFORCED');
     console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   } catch (error) {
