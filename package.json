@@ -2,11 +2,11 @@
   "name": "shadow-db-mcp-server",
   "version": "1.0.0",
   "description": "MCP server for semantic search in PostgreSQL shadow databases with 768D embeddings",
-  "main": "shadow-db-mcp-server.ts",
+  "main": "src/shadow-db-http-server.ts",
   "type": "module",
   "scripts": {
-    "start": "npx tsx shadow-db-mcp-server.ts",
-    "dev": "npx tsx --watch shadow-db-mcp-server.ts",
+    "start": "npx tsx src/shadow-db-http-server.ts",
+    "dev": "npx tsx --watch src/shadow-db-http-server.ts",
     "test": "npx tsx test-shadow-mcp.ts"
   },
   "keywords": [
