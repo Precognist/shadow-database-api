@@ -760,6 +760,7 @@ async function setupHooksForTable(baseId, tableId, tableName, shadowDbName) {
             const hookUrl = `${config.webhook.url}/webhook/${baseId}/${tableName}?operation=${operation}`;
 
             // NocoDB v3 webhook format (required for 0.265+)
+            // Note: headers must be an array, not a string - NocoDB calls .find() on it
             const hookConfig = {
                 title: `Shadow-Sync-${operation.toUpperCase()}`,
                 event: 'after',
@@ -770,7 +771,7 @@ async function setupHooksForTable(baseId, tableId, tableName, shadowDbName) {
                     payload: {
                         url: hookUrl,
                         method: 'POST',
-                        headers: '{}',
+                        headers: [],
                         body: '{{json event}}'
                     }
                 },
