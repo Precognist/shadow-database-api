@@ -752,37 +752,42 @@ async function setupHooksForTable(baseId, tableId, tableName, shadowDbName) {
             return; // Already registered
         }
 
-        // Create webhook hooks for INSERT, UPDATE, DELETE using NocoDB v2 webhook format
-        // (Production-proven format that works with NocoDB)
+        // Create webhook hooks for INSERT, UPDATE, DELETE using NocoDB v3 webhook format
+        // (Required for NocoDB 0.265+ - v2 format is deprecated)
         const operations = ['insert', 'update', 'delete'];
 
         for (const operation of operations) {
             const hookUrl = `${config.webhook.url}/webhook/${baseId}/${tableName}?operation=${operation}`;
 
-            // NocoDB v2 webhook format (production-proven)
+            // NocoDB v3 webhook format (required for 0.265+)
             const hookConfig = {
                 title: `Shadow-Sync-${operation.toUpperCase()}`,
-                description: `Auto-sync ${tableName} to ${shadowDbName} for ${operation}`,
-                event: operation,
+                event: 'after',
+                operation: [operation],
+                version: 'v3',
                 notification: {
-                    type: 'webhook',
-                    webhook: {
-                        title: hookUrl,
-                        url: hookUrl
+                    type: 'URL',
+                    payload: {
+                        url: hookUrl,
+                        method: 'POST',
+                        headers: '{}',
+                        body: '{{json event}}'
                     }
-                }
+                },
+                active: true
             };
 
             try {
                 await axios.post(
-                    `${config.nocodb.url}/api/v2/db/meta/tables/${tableId}/hooks`,
+                    `${config.nocodb.url}/api/v2/meta/tables/${tableId}/hooks`,
                     hookConfig,
                     { headers: { 'xc-token': config.nocodb.token } }
                 );
                 console.log(`    🪝 Setup hook for ${operation} on ${tableName}`);
             } catch (hookError) {
-                // Ignore if hook already exists
-                if (hookError.response?.status !== 409) {
+                // Ignore if hook already exists (409) or duplicate title
+                if (hookError.response?.status !== 409 &&
+                    !hookError.response?.data?.msg?.includes('already exists')) {
                     console.warn(`    ⚠️ Could not setup ${operation} hook: ${hookError.message}`);
                 }
             }
