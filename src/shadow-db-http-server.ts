@@ -27,17 +27,8 @@ interface AgentAccessConfig {
   [agentId: string]: string;
 }
 
-const SHADOW_DB_CONFIG: ShadowDbConfig = {
-  // COMMENTED OUT: Production database hardcoded references - security issue
-  // real_estate: {
-  //   database: 'nexus_real_estate_portfolio_demo_shadow',
-  //   tables: ['Properties', 'MaintenanceRequests', 'Tenants']
-  // },
-  // dovetail: {
-  //   database: 'nexus_dovetail_gig_platform_demo_shadow',
-  //   tables: ['Bands', 'Venues', 'Matches']
-  // }
-};
+// Dynamic shadow database config - populated at startup via auto-discovery
+let SHADOW_DB_CONFIG: ShadowDbConfig = {};
 
 const AGENT_DATABASE_MAPPING: AgentAccessConfig = {
   // COMMENTED OUT: Production agent mappings - security issue
@@ -53,6 +44,81 @@ const PG_CONFIG = {
   user: env.PG_USER || 'postgres',
   password: env.PG_PASSWORD || 'postgres'
 };
+
+// ==================== Auto-Discovery ====================
+
+/**
+ * Discover shadow databases (nexus_*_shadow) and their tables
+ * This runs at startup to dynamically populate SHADOW_DB_CONFIG
+ */
+async function discoverShadowDatabases(): Promise<void> {
+  console.error('🔍 Discovering shadow databases...');
+
+  const client = new pg.Client({
+    host: PG_CONFIG.host,
+    port: PG_CONFIG.port,
+    user: PG_CONFIG.user,
+    password: PG_CONFIG.password,
+    database: 'postgres' // Connect to default db for discovery
+  });
+
+  try {
+    await client.connect();
+
+    // Find all shadow databases (pattern: nexus_*_shadow)
+    const dbResult = await client.query(`
+      SELECT datname FROM pg_database
+      WHERE datname LIKE 'nexus_%_shadow'
+      AND datistemplate = false
+    `);
+
+    console.error(`   Found ${dbResult.rows.length} shadow database(s)`);
+
+    for (const row of dbResult.rows) {
+      const dbName = row.datname;
+      // Extract friendly name from database name: nexus_base_shadow -> base
+      const friendlyName = dbName.replace(/^nexus_/, '').replace(/_shadow$/, '');
+
+      // Connect to each shadow database to discover tables
+      const shadowClient = new pg.Client({
+        host: PG_CONFIG.host,
+        port: PG_CONFIG.port,
+        user: PG_CONFIG.user,
+        password: PG_CONFIG.password,
+        database: dbName
+      });
+
+      try {
+        await shadowClient.connect();
+
+        // Get all tables with vector embedding column
+        const tableResult = await shadowClient.query(`
+          SELECT table_name
+          FROM information_schema.columns
+          WHERE column_name = 'embedding'
+          AND table_schema = 'public'
+        `);
+
+        const tables = tableResult.rows.map(r => r.table_name);
+
+        if (tables.length > 0) {
+          SHADOW_DB_CONFIG[friendlyName] = {
+            database: dbName,
+            tables: tables
+          };
+          console.error(`   ✅ ${friendlyName}: ${tables.join(', ')}`);
+        }
+      } finally {
+        await shadowClient.end();
+      }
+    }
+
+    console.error(`   Total: ${Object.keys(SHADOW_DB_CONFIG).length} searchable database(s)`);
+
+  } finally {
+    await client.end();
+  }
+}
 
 // ==================== Embedding Generation ====================
 
@@ -489,16 +555,37 @@ fastify.get('/agent-info', async (request, reply) => {
   };
 });
 
+// List available databases endpoint
+fastify.get('/list-databases', async (request, reply) => {
+  return {
+    success: true,
+    databases: Object.entries(SHADOW_DB_CONFIG).map(([name, config]) => ({
+      name,
+      database: config.database,
+      tables: config.tables
+    }))
+  };
+});
+
 // ==================== Startup ====================
 
 async function start() {
   try {
     console.error('🚀 Shadow Database HTTP Server (Streamable) Starting...');
     console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.error('Agent Access Control Enabled:');
-    Object.entries(AGENT_DATABASE_MAPPING).forEach(([agent, db]) => {
-      console.error(`  • ${agent} → ${db}`);
-    });
+
+    // Auto-discover shadow databases
+    await discoverShadowDatabases();
+
+    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.error('Agent Access Control:');
+    if (Object.keys(AGENT_DATABASE_MAPPING).length > 0) {
+      Object.entries(AGENT_DATABASE_MAPPING).forEach(([agent, db]) => {
+        console.error(`  • ${agent} → ${db}`);
+      });
+    } else {
+      console.error('  • No agent mappings configured (development mode)');
+    }
     console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
     // Pre-load embedding model
@@ -510,7 +597,7 @@ async function start() {
 
     console.error('✅ Shadow Database HTTP Server running');
     console.error(`   Listening on http://0.0.0.0:${port}`);
-    // console.error('   Available databases: real_estate, dovetail'); // COMMENTED OUT: Production hardcoded values
+    console.error(`   Available databases: ${Object.keys(SHADOW_DB_CONFIG).join(', ') || 'none discovered'}`);
     console.error('   Access control: ENFORCED');
     console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   } catch (error) {
