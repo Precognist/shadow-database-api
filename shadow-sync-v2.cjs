@@ -600,6 +600,12 @@ async function generateEmbeddings(shadowDbName, tableName) {
 
 /**
  * Register shadow database back to NocoDB
+ * Uses the pre-configured PostgreSQL integration (created during pre-PHASE 2 setup)
+ *
+ * Flow:
+ * 1. Find existing postgres integration (created manually)
+ * 2. Create base for shadow database
+ * 3. Add source to base using fk_integration_id
  */
 async function registerShadowInNocoDB(shadowDbName, baseName, baseId) {
     // Check if already registered in memory
@@ -608,69 +614,128 @@ async function registerShadowInNocoDB(shadowDbName, baseName, baseId) {
         return;
     }
 
+    const shadowTitle = `Nexus-${baseName}`;
+
     try {
-        // Query NocoDB to check if shadow already exists
-        const response = await axios.get(
+        // Step 1: Check if shadow base already exists
+        const basesResponse = await axios.get(
             `${config.nocodb.url}/api/v2/meta/bases`,
             { headers: { 'xc-token': config.nocodb.token } }
         );
 
-        const bases = response.data.list || [];
-        const shadowTitle = `Nexus-${baseName}`;
-        const existingShadow = bases.find(b =>
-            b.title === shadowTitle &&
-            b.sources?.some(s => {
-                try {
-                    const cfg = typeof s.config === 'string' ? JSON.parse(s.config) : s.config;
-                    return cfg.connection?.database === shadowDbName;
-                } catch (e) {
-                    return false;
-                }
-            })
-        );
+        const bases = basesResponse.data.list || [];
+        const existingShadow = bases.find(b => b.title === shadowTitle);
 
         if (existingShadow) {
-            console.log(`  ✅ Shadow already registered: ${shadowDbName}`);
-            registeredShadows.set(shadowDbName, { baseId, timestamp: Date.now() });
+            // Check if it has proper sources configured
+            if (existingShadow.sources && existingShadow.sources.length > 0) {
+                const hasSource = existingShadow.sources.some(s => s.fk_integration_id || !s.is_local);
+                if (hasSource) {
+                    console.log(`  ✅ Shadow already registered with source: ${shadowDbName}`);
+                    registeredShadows.set(shadowDbName, { baseId, shadowBaseId: existingShadow.id, timestamp: Date.now() });
+                    return;
+                }
+            }
+            // Base exists but needs source - add it
+            await addSourceToShadowBase(existingShadow.id, shadowDbName);
+            registeredShadows.set(shadowDbName, { baseId, shadowBaseId: existingShadow.id, timestamp: Date.now() });
             return;
         }
 
-        // Register new shadow database
-        const shadowConfig = {
+        // Step 2: Create the shadow base
+        const baseConfig = {
             title: shadowTitle,
+            description: `Shadow database for ${baseName} - auto-synced with vector embeddings`
+        };
+
+        const createBaseResponse = await axios.post(
+            `${config.nocodb.url}/api/v2/meta/bases`,
+            baseConfig,
+            { headers: { 'xc-token': config.nocodb.token } }
+        );
+
+        const newBaseId = createBaseResponse.data.id;
+        console.log(`  ✅ Created shadow base: ${shadowTitle} (${newBaseId})`);
+
+        // Step 3: Add external source using the pre-configured integration
+        await addSourceToShadowBase(newBaseId, shadowDbName);
+
+        registeredShadows.set(shadowDbName, { baseId, shadowBaseId: newBaseId, timestamp: Date.now() });
+        console.log(`  ✅ Registered shadow database in NocoDB: ${shadowDbName}`);
+
+    } catch (error) {
+        if (error.response) {
+            console.error(`  ⚠️ Failed to register shadow: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
+        } else {
+            console.error(`  ⚠️ Failed to register shadow: ${error.message}`);
+        }
+    }
+}
+
+/**
+ * Add external source to a shadow base using the pre-configured postgres integration
+ */
+async function addSourceToShadowBase(baseId, shadowDbName) {
+    try {
+        // Find the postgres integration (created during pre-PHASE 2 setup)
+        const integrationsResponse = await axios.get(
+            `${config.nocodb.url}/api/v2/meta/integrations`,
+            { headers: { 'xc-token': config.nocodb.token } }
+        );
+
+        const integrations = integrationsResponse.data.list || [];
+
+        // Look for postgres integration - matches patterns like "phase2client-postgres", "client-nexus", etc.
+        const postgresIntegration = integrations.find(i =>
+            i.type === 'database' &&
+            i.sub_type === 'pg' &&
+            (i.title.includes('postgres') || i.title.includes('nexus'))
+        );
+
+        if (!postgresIntegration) {
+            console.error(`    ⚠️ No postgres integration found. Create one in NocoDB first.`);
+            console.log(`    Available integrations: ${integrations.map(i => i.title).join(', ')}`);
+            return;
+        }
+
+        console.log(`    📎 Using integration: ${postgresIntegration.title} (${postgresIntegration.id})`);
+
+        // Add source to base using fk_integration_id
+        const sourceConfig = {
+            alias: shadowDbName,
+            type: 'pg',
+            is_schema_readonly: true,
+            is_data_readonly: false,
+            fk_integration_id: postgresIntegration.id,
             config: {
                 client: 'pg',
                 connection: {
                     host: config.postgres.host,
-                    port: config.postgres.port,
+                    port: parseInt(config.postgres.port) || 5432,
                     user: config.postgres.adminUser,
                     password: config.postgres.adminPassword,
                     database: shadowDbName
                 }
             },
-            inflection: {
-                table_name: 'as_is',
-                column_name: 'as_is'
-            },
-            meta: {
-                readonly: true
-            }
+            inflection_column: 'none',
+            inflection_table: 'none'
         };
 
         await axios.post(
-            `${config.nocodb.url}/api/v2/meta/bases`,
-            shadowConfig,
+            `${config.nocodb.url}/api/v2/meta/bases/${baseId}/sources`,
+            sourceConfig,
             { headers: { 'xc-token': config.nocodb.token } }
         );
 
-        registeredShadows.set(shadowDbName, { baseId, timestamp: Date.now() });
-        console.log(`  ✅ Registered shadow database in NocoDB: ${shadowDbName}`);
+        console.log(`    ✅ Added external source to shadow base: ${shadowDbName}`);
+
     } catch (error) {
-        // Ignore if already exists
-        if (!error.response || error.response.status !== 409) {
-            console.error(`  ⚠️ Failed to register shadow: ${error.message}`);
+        if (error.response?.status === 409) {
+            console.log(`    ✅ Source already exists for base`);
+        } else if (error.response) {
+            console.error(`    ⚠️ Failed to add source: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
         } else {
-            registeredShadows.set(shadowDbName, { baseId, timestamp: Date.now() });
+            console.error(`    ⚠️ Failed to add source: ${error.message}`);
         }
     }
 }
