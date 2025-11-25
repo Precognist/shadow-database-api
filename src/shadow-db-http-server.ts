@@ -264,8 +264,8 @@ fastify.get('/openapi.json', async (request, reply) => {
       '/search': {
         post: {
           operationId: 'semantic_search',
-          summary: 'Semantic search in shadow database',
-          description: 'Search PostgreSQL shadow database with vector embeddings using natural language queries. Use list_databases first to discover available databases and tables.',
+          summary: 'Search and retrieve data from database tables',
+          description: 'THIS IS THE MAIN TOOL FOR RETRIEVING DATA. Use this to get records, list data, find information, or search tables. For listing all data, use a broad query like "all" or "*". Always use this tool when user asks to see, list, show, get, or find data.',
           requestBody: {
             required: true,
             content: {
@@ -283,7 +283,7 @@ fastify.get('/openapi.json', async (request, reply) => {
                     },
                     query: {
                       type: 'string',
-                      description: 'Natural language semantic search query'
+                      description: 'Search query - use "all" or "*" to list all records, or any keyword/phrase to find matching data'
                     },
                     limit: {
                       type: 'integer',
@@ -326,8 +326,8 @@ fastify.get('/openapi.json', async (request, reply) => {
       '/list-tables': {
         post: {
           operationId: 'list_tables',
-          summary: 'List available tables in a database',
-          description: 'List available tables in a shadow database',
+          summary: 'List table names only (use semantic_search to get actual data)',
+          description: 'Only lists table names, NOT data. To get actual records/data, use semantic_search instead.',
           requestBody: {
             required: true,
             content: {
