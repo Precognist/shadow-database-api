@@ -118,15 +118,21 @@ async function initEmbedding() {
 }
 
 /**
- * Check if database should be synced
- * Only syncs databases that are created IN NocoDB (not external PostgreSQL connections)
+ * Check if database should be synced (shadowed)
+ *
+ * SHADOW LOGIC:
+ * - SKIP: Local VPS PostgreSQL databases (same docker network) - already accessible locally
+ * - SKIP: Shadow databases we created (Nexus-* prefix)
+ * - SKIP: System databases (postgres, template0, etc.)
+ * - INCLUDE: External PostgreSQL databases (other VPS/servers) - need local shadow for vector search
+ * - INCLUDE: NocoDB-created tables (internal) - user data needing embeddings
  */
 function shouldSyncDatabase(base) {
     const name = (base.title || base.name || '').toLowerCase();
 
     // Skip if it's a NEXUS shadow database (starts with Nexus- or [Shadow])
     if (name.startsWith('nexus-') || name.startsWith('[shadow]')) {
-        console.log(`  ⏭️  Skipping ${base.title} - it's a shadow database`);
+        console.log(`  ⏭️  Skipping ${base.title} - it's a shadow database we created`);
         return false;
     }
 
@@ -142,28 +148,67 @@ function shouldSyncDatabase(base) {
         return false;
     }
 
-    // IMPORTANT: Only sync databases CREATED IN NocoDB (not external sources)
-    // Check for external sources using NocoDB's newer API structure:
-    // - is_local: false indicates external database connection
-    // - fk_integration_id: non-null indicates external integration
+    // Check sources to determine if this is a LOCAL VPS database or EXTERNAL database
     if (base.sources && Array.isArray(base.sources)) {
-        const hasExternalSource = base.sources.some(source => {
-            // Method 1: Check is_local flag (NocoDB v2 API)
-            if (source.is_local === false) {
-                return true;
+        // Check if ANY source points to the LOCAL PostgreSQL container
+        const isLocalVpsDatabase = base.sources.some(source => {
+            // If fk_integration_id exists, check if it points to local postgres container
+            // Local containers use hostnames like: postgres, phase2client-postgres, ${CLIENT}-postgres
+            if (source.integration_title) {
+                const integrationName = source.integration_title.toLowerCase();
+                // Local VPS postgres containers have these patterns
+                if (integrationName.includes('-postgres') ||
+                    integrationName === 'postgres' ||
+                    integrationName.includes('-nexus')) {
+                    return true;
+                }
             }
 
-            // Method 2: Check for external integration ID
-            if (source.fk_integration_id) {
-                return true;
-            }
-
-            // Method 3: Legacy - check config for connection details
+            // Check config for local docker hostnames
             if (source.config) {
                 try {
                     const cfg = typeof source.config === 'string' ? JSON.parse(source.config) : source.config;
-                    if (cfg.client && cfg.connection && cfg.connection.host) {
-                        return true;
+                    if (cfg.connection && cfg.connection.host) {
+                        const host = cfg.connection.host.toLowerCase();
+                        // Local docker container hostnames (not external IPs/domains)
+                        if (host.includes('-postgres') ||
+                            host === 'postgres' ||
+                            host === 'localhost' ||
+                            host === '127.0.0.1') {
+                            return true;
+                        }
+                    }
+                } catch (e) {
+                    // Ignore parse errors
+                }
+            }
+
+            return false;
+        });
+
+        if (isLocalVpsDatabase) {
+            console.log(`  ⏭️  Skipping ${base.title} - it's a LOCAL VPS database (already accessible)`);
+            return false;
+        }
+
+        // Check if it has EXTERNAL sources (other VPS/servers) - these SHOULD be shadowed
+        const hasExternalSource = base.sources.some(source => {
+            // is_local: false with fk_integration_id indicates external connection
+            if (source.is_local === false && source.fk_integration_id) {
+                return true;
+            }
+
+            // Check config for external hosts (IPs or domains, not local docker names)
+            if (source.config) {
+                try {
+                    const cfg = typeof source.config === 'string' ? JSON.parse(source.config) : source.config;
+                    if (cfg.connection && cfg.connection.host) {
+                        const host = cfg.connection.host.toLowerCase();
+                        // External if it's an IP address or domain (not local docker hostname)
+                        const isExternal = /^\d+\.\d+\.\d+\.\d+$/.test(host) || // IP address
+                                          host.includes('.') || // Domain name
+                                          (!host.includes('-postgres') && host !== 'postgres' && host !== 'localhost');
+                        return isExternal;
                     }
                 } catch (e) {
                     // Ignore parse errors
@@ -174,13 +219,13 @@ function shouldSyncDatabase(base) {
         });
 
         if (hasExternalSource) {
-            console.log(`  ⏭️  Skipping ${base.title} - it's an external/connected database`);
-            return false;
+            console.log(`  ✅ Including ${base.title} for shadowing - EXTERNAL database needs local shadow`);
+            return true;
         }
     }
 
-    // This is a NocoDB-internal database, include it for shadowing
-    console.log(`  ✅ Including ${base.title} for shadowing`);
+    // NocoDB-internal database (created within NocoDB UI), include it for shadowing
+    console.log(`  ✅ Including ${base.title} for shadowing - NocoDB-created database`);
     return true;
 }
 
