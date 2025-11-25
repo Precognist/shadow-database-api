@@ -708,7 +708,7 @@ async function setupHooksForTable(baseId, tableId, tableName, shadowDbName) {
 
             try {
                 await axios.post(
-                    `${config.nocodb.url}/api/v2/db/meta/tables/${tableId}/hooks`,
+                    `${config.nocodb.url}/api/v2/meta/tables/${tableId}/hooks`,
                     hookConfig,
                     { headers: { 'xc-token': config.nocodb.token } }
                 );
