@@ -119,49 +119,68 @@ async function initEmbedding() {
 
 /**
  * Check if database should be synced
- * Only syncs external databases that are created IN NocoDB (not from external sources)
+ * Only syncs databases that are created IN NocoDB (not external PostgreSQL connections)
  */
 function shouldSyncDatabase(base) {
     const name = (base.title || base.name || '').toLowerCase();
 
     // Skip if it's a NEXUS shadow database (starts with Nexus- or [Shadow])
     if (name.startsWith('nexus-') || name.startsWith('[shadow]')) {
+        console.log(`  ⏭️  Skipping ${base.title} - it's a shadow database`);
         return false;
     }
 
     // Skip NEXUS-memory (internal, already synced separately)
     if (name === 'nexus-memory') {
+        console.log(`  ⏭️  Skipping ${base.title} - NEXUS-memory is synced separately`);
         return false;
     }
 
     // Skip internal/system databases
     if (name === 'claude' || name === 'postgres' || name === 'template0' || name === 'template1' || name === 'nexus') {
+        console.log(`  ⏭️  Skipping ${base.title} - system database`);
         return false;
     }
 
     // IMPORTANT: Only sync databases CREATED IN NocoDB (not external sources)
-    // External sources have sources with external connection config
-    // NocoDB-internal databases have no sources or local-only sources
+    // Check for external sources using NocoDB's newer API structure:
+    // - is_local: false indicates external database connection
+    // - fk_integration_id: non-null indicates external integration
     if (base.sources && Array.isArray(base.sources)) {
         const hasExternalSource = base.sources.some(source => {
-            if (!source.config) return false;
-            try {
-                const cfg = typeof source.config === 'string' ? JSON.parse(source.config) : source.config;
-                // If it has a full external connection config, it's from outside NocoDB
-                return cfg.client && cfg.connection && cfg.connection.host;
-            } catch (e) {
-                return false;
+            // Method 1: Check is_local flag (NocoDB v2 API)
+            if (source.is_local === false) {
+                return true;
             }
+
+            // Method 2: Check for external integration ID
+            if (source.fk_integration_id) {
+                return true;
+            }
+
+            // Method 3: Legacy - check config for connection details
+            if (source.config) {
+                try {
+                    const cfg = typeof source.config === 'string' ? JSON.parse(source.config) : source.config;
+                    if (cfg.client && cfg.connection && cfg.connection.host) {
+                        return true;
+                    }
+                } catch (e) {
+                    // Ignore parse errors
+                }
+            }
+
+            return false;
         });
 
         if (hasExternalSource) {
-            // This is an external source, skip it
-            console.log(`  ⏭️  Skipping ${name} - it's an external source database`);
+            console.log(`  ⏭️  Skipping ${base.title} - it's an external/connected database`);
             return false;
         }
     }
 
     // This is a NocoDB-internal database, include it for shadowing
+    console.log(`  ✅ Including ${base.title} for shadowing`);
     return true;
 }
 
@@ -385,11 +404,17 @@ async function createShadowDatabase(baseId, baseName) {
 }
 
 /**
- * Initialize shadow database with pgvector extension
+ * Initialize shadow database with pgvector extension and proper permissions
  */
 async function initShadowDatabase(shadowDbName) {
     try {
         const client = await getShadowClient(shadowDbName);
+
+        // Grant schema permissions to the current user
+        const currentUser = config.postgres.adminUser;
+        await client.query(`GRANT ALL ON SCHEMA public TO "${currentUser}";`);
+        await client.query(`GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO "${currentUser}";`);
+        await client.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO "${currentUser}";`);
 
         // Enable pgvector extension
         await client.query('CREATE EXTENSION IF NOT EXISTS vector;');
