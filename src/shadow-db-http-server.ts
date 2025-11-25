@@ -263,8 +263,9 @@ fastify.get('/openapi.json', async (request, reply) => {
     paths: {
       '/search': {
         post: {
+          operationId: 'semantic_search',
           summary: 'Semantic search in shadow database',
-          description: 'Search PostgreSQL shadow database with vector embeddings using natural language queries',
+          description: 'Search PostgreSQL shadow database with vector embeddings using natural language queries. Use list_databases first to discover available databases and tables.',
           requestBody: {
             required: true,
             content: {
@@ -325,7 +326,8 @@ fastify.get('/openapi.json', async (request, reply) => {
       },
       '/list-tables': {
         post: {
-          summary: 'List available tables',
+          operationId: 'list_tables',
+          summary: 'List available tables in a database',
           description: 'List available tables in a shadow database',
           requestBody: {
             required: true,
@@ -367,8 +369,42 @@ fastify.get('/openapi.json', async (request, reply) => {
           }
         }
       },
+      '/list-databases': {
+        get: {
+          operationId: 'list_databases',
+          summary: 'List all available databases and their tables',
+          description: 'CALL THIS FIRST to discover which databases and tables are available for searching',
+          responses: {
+            '200': {
+              description: 'List of available databases',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      success: { type: 'boolean' },
+                      databases: {
+                        type: 'array',
+                        items: {
+                          type: 'object',
+                          properties: {
+                            name: { type: 'string' },
+                            database: { type: 'string' },
+                            tables: { type: 'array', items: { type: 'string' } }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
       '/agent-info': {
         get: {
+          operationId: 'get_agent_info',
           summary: 'Get agent access info',
           description: 'Get which database this agent has access to',
           responses: {
