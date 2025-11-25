@@ -687,23 +687,28 @@ async function setupHooksForTable(baseId, tableId, tableName, shadowDbName) {
             return; // Already registered
         }
 
-        // Create webhook hooks for INSERT, UPDATE, DELETE
+        // Create webhook hooks for INSERT, UPDATE, DELETE using NocoDB v3 webhook format
         const operations = ['insert', 'update', 'delete'];
 
         for (const operation of operations) {
             const hookUrl = `${config.webhook.url}/webhook/${baseId}/${tableName}?operation=${operation}`;
 
+            // NocoDB v3 webhook format (required for NocoDB 0.265+)
             const hookConfig = {
                 title: `Shadow-Sync-${operation.toUpperCase()}`,
-                description: `Auto-sync ${tableName} to ${shadowDbName} for ${operation}`,
-                event: operation,
+                event: 'after',
+                operation: [operation],
+                version: 'v3',
                 notification: {
-                    type: 'webhook',
-                    webhook: {
-                        title: hookUrl,
-                        url: hookUrl
+                    type: 'URL',
+                    payload: {
+                        url: hookUrl,
+                        method: 'POST',
+                        headers: '{}',
+                        body: '{{json event}}'
                     }
-                }
+                },
+                active: true
             };
 
             try {
@@ -714,8 +719,9 @@ async function setupHooksForTable(baseId, tableId, tableName, shadowDbName) {
                 );
                 console.log(`    🪝 Setup hook for ${operation} on ${tableName}`);
             } catch (hookError) {
-                // Ignore if hook already exists
-                if (hookError.response?.status !== 409) {
+                // Ignore if hook already exists (409) or duplicate title
+                if (hookError.response?.status !== 409 &&
+                    !hookError.message?.includes('already exists')) {
                     console.warn(`    ⚠️ Could not setup ${operation} hook: ${hookError.message}`);
                 }
             }
