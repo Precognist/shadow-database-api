@@ -179,7 +179,7 @@ async function vectorSearch(
         data,
         embedding <=> $1::vector as distance,
         (1 - (embedding <=> $1::vector)) * 100 as similarity_score
-      FROM ${table}
+      FROM "${table}"
       ORDER BY embedding <=> $1::vector
       LIMIT $2
     `;
