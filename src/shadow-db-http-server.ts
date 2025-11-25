@@ -275,12 +275,11 @@ fastify.get('/openapi.json', async (request, reply) => {
                   properties: {
                     database: {
                       type: 'string',
-                      // enum: ['real_estate', 'dovetail'], // COMMENTED OUT: Production hardcoded values
-                      description: 'Shadow database to search'
+                      description: 'Database name from list_databases response (use the "name" field, e.g., "base", "newdbtest", NOT the full database name)'
                     },
                     table: {
                       type: 'string',
-                      description: 'Table name to search (e.g., Properties, Bands, Venues)'
+                      description: 'Table name from list_databases response (e.g., "Table-1")'
                     },
                     query: {
                       type: 'string',
@@ -338,8 +337,7 @@ fastify.get('/openapi.json', async (request, reply) => {
                   properties: {
                     database: {
                       type: 'string',
-                      // enum: ['real_estate', 'dovetail'], // COMMENTED OUT: Production hardcoded values
-                      description: 'Shadow database to query'
+                      description: 'Database name from list_databases response (use the "name" field, e.g., "base", "newdbtest")'
                     }
                   },
                   required: ['database']
